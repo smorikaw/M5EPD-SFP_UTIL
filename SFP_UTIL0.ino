@@ -13,10 +13,11 @@
 #include "binaryttf.h"
 
 unsigned char EEPROM_DATA[512];
+unsigned char EEPROM_DATA2[512];
 // serial number
 char SN[32];
-char fnP[128][128] = {"", "/C90AW42595.bin","", "/C90AW41867.bin", "/C90AW41865.bin", "/C90AW41733.bin"};
-int DIRmax=0;
+char fnP[512][64] = {"", "/C90AW42595.bin","", "/C90AW41867.bin", "/C90AW41865.bin", "/C90AW41733.bin"};
+int DIRmax=0,DIRtop=0;
 int lY = 0;
 int menuP = 1; // 0:load file , 1:read I2C , 2:save file
 int fileP = 0;
@@ -38,8 +39,68 @@ M5EPD_Canvas HEXcanvas(&M5.EPD);
 M5EPD_Canvas MENUcanvas(&M5.EPD);
 M5EPD_Canvas filePcanvas(&M5.EPD);
 //---------------------------------------------------------------
+// save fle name set from vender Serial number
+void setSN(int offset, int len){
+      int i = 0;
+      SN[i] = '/';
+      while(EEPROM_DATA[i+offset] != 0x20){
+        SN[i+1] = EEPROM_DATA[offset+i];
+        i++;
+        if(i>16) break;
+      }
+      SN[i+1] = '.';
+      SN[i+2] = 'b';
+      SN[i+3] = 'i';
+      SN[i+4] = 'n';                  
+      SN[i+5] = 0x00;
+}
+//================================== dir display and file select ===========================================
+void drawfileP(){
+  filePcanvas.fillCanvas(0);
+  filePcanvas.setTextSize(48);
+  filePcanvas.drawString(">" , 0, (fileP-1)*pitch);
+  filePcanvas.pushCanvas(2,60,UPDATE_MODE_DU);
+}
+void upfileP(){
+ fileP++;
+ if(fileP >  15  ) ShowDirPageUp();
+ drawfileP();
+}
+void downfileP(){
+ fileP--;
+ if(fileP < 1 ) ShowDirPageDown();
+ drawfileP();
+}
+void ShowDirList(){
+  int i, locY=0, DIRlen;
+      if((DIRtop+15)< DIRmax) {DIRlen =15; }else{ DIRlen = DIRmax - DIRtop;}
+     DTLcanvas.fillCanvas(0);
+     DTLcanvas.setTextSize(32);
+     DTLcanvas.setTextColor(15,0);
+   for(i=0; i < DIRlen ; i++){
+         DTLcanvas.drawString(fnP[i+DIRtop+1], 10, locY++ * pitch);
+   }
+   DTLcanvas.pushCanvas(20,60,UPDATE_MODE_DU);
+}
+void ShowDirPageUp(){
+
+  if((DIRtop+15) < DIRmax){
+    DIRtop += 15;
+    fileP = 1;
+    ShowDirList();
+  }
+}
+void ShowDirPageDown(){
+
+  if(DIRtop>15){
+    DIRtop -= 15;
+    fileP = 15;
+    ShowDirList();
+    }
+}
+
 void ShowDir(){
- int locY = 0,i  = 1;
+ int locY = 0,i  = 1, DIRlen;
  File file;
   DTLcanvas.fillCanvas(0);
   DTLcanvas.setTextSize(32);
@@ -56,21 +117,23 @@ void ShowDir(){
 //      DTLcanvas.drawString(entry.name(), 10, locY++ * pitch);
 //    directory file is not display
     }else{
-      DTLcanvas.drawString(entry.name(), 10, locY++ * pitch);
-//      fnP[i++] = entry.name();
       sprintf(fnP[i++],"%s", entry.name());
-      if(i > 16 ) break;
      }
    }
  }
    DIRmax = i;
-   DTLcanvas.pushCanvas(20,60,UPDATE_MODE_DU);
+   DIRtop = 0;
+    ShowDirList();
    fileP = 1;
    drawfileP();
    delay(500);
 }
+//==============================================================================
 int FileRead(char *fn){
-  int i, size, locY = 1,offset = 0;
+  int i,j, size, locY = 1,offset = 0;
+  byte c;
+  char buf[33];
+  String s;
   File file;
 
 fileP = 0;
@@ -90,27 +153,81 @@ fileP = 0;
   }
       DTLcanvas.drawString("try open " + String(fn), 10, locY++ * pitch);
       DTLcanvas.drawString("file read success !!", 10, locY++ * pitch);
+      locY++;
+      DTLcanvas.setTextSize(28);
+      DTLcanvas.drawString("     >>> ASCII DUMP <<<", 20, locY++ * pitch);
+    for(i=0 ; i < 8 ; i++){
+      s = "";
+      for(j = 0; j < 32 ; j++){
+        c = EEPROM_DATA[i*32+j];
+        if(c > 0x20 && c < 0x7f){
+          sprintf(buf, "%c",c);
+        }else {
+          sprintf(buf, ".",c);
+        }
+        s.concat(buf);
+    }
+        DTLcanvas.drawString(s , 20, locY++ * pitch);
+  }
+
   }
   file.close();
 
       DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
-      dispHEXdump();
+
+        dispHEXdump();
+
   return 0;
 }
+int FileRead2(char *fn){
+  int i,j, size, locY = 1,offset = 0;
+  byte c;
+  char buf[33];
+  String s;
+  File file;
+
+// open error checkを加える
+  DTLcanvas.fillCanvas(0);
+  DTLcanvas.setTextSize(32);
+  file = SD.open(fn, FILE_READ);
+  if(file == false){
+      DTLcanvas.drawString("try open " + String(fn), 10, locY++ * pitch);
+      DTLcanvas.drawString("file read fail !!", 10, locY++ * pitch);
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
+  }else{
+  dataSize = file.size();
+  if(dataSize == 128) offset = 128;
+  if(dataSize > 256 ) dataSize = 256;
+  for (i=0 ; i < dataSize ; i++){
+    EEPROM_DATA2[i + offset] = file.read();
+  }
+        dispHEXDIFFdump();
+ 
+  }
+  file.close();
+  fileP = 0;   // back main menu
+  return 0;
+}
+
 int FileWrite(char *fn){
   
   int locY = 0;
   File file;
   DTLcanvas.fillCanvas(0);
   DTLcanvas.setTextSize(32);
+  if(fn[0] == 0x00){
+        DTLcanvas.drawString("file name not set", 10, locY++ * pitch);
+  }else{
   if(SD.exists(fn)){
     DTLcanvas.drawString(String(fn) + " exists!", 10, locY++ * pitch);
   }
-  file =SD.open(fn, FILE_WRITE);
-  file.write(EEPROM_DATA, dataSize);
-  file.close();
+  file =SD.open(fn, FILE_WRITE);  // over write mode
   DTLcanvas.drawString("try write " + String(fn), 10, locY++ * pitch);
+  file.write(EEPROM_DATA, dataSize);
   DTLcanvas.drawString("file write success !!", 10, locY++ * pitch);
+  file.close();
+
+    }
   DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
 }
 // ==============================================
@@ -147,47 +264,113 @@ int WriteI2C(){
 //
 int ReadI2C(){
   int i, cc1=0,cc2=0,locY=0;
+  int cc_base, cc_ext;
   char buf[512];
 
-//  Wire.beginTransmission(0x50);
-//  Wire.write(0x00);
-//  Wire.endTransmission();
-//  Wire.requestFrom(0x50, 256);
-// Wire.available();
-//  i=0;
-// while(Wire.available()){
-//   EEPROM_DATA[i++] = Wire.read();
-// }
+      DTLcanvas.fillCanvas(0);
+      DTLcanvas.setTextSize(32);
+      DTLcanvas.drawString("Try read I2C/PORT A", 10, locY++ * pitch);
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
+
+      SN[0] = 0x00;       // clear filename   
 for(i=0; i < 0xff; i++){
   Wire1.beginTransmission(0x50);
   Wire1.write(i);
   Wire1.endTransmission();
+  delay(5);
   Wire1.requestFrom(0x50, 1);
     delay(5);                // IMPORTANT !!!
   EEPROM_DATA[i] = Wire1.read();
 }
-// M5.I2C.readBytes(0x50, 0xff, EEPROM_DATA);
 
  dataSize = i;
-      DTLcanvas.fillCanvas(0);
-      DTLcanvas.setTextSize(32);
-      if(check_CC()){
-      DTLcanvas.drawString("I2C read success !!", 10, locY++ * pitch);
-      }else{
-      DTLcanvas.drawString("I2C read fail !!", 10, locY++ * pitch);
-      }
-      cc1 = calc_CC1();
-      cc2 = calc_CC2();
 
-      sprintf(buf,"CC base=%02x  CALC=%04x",EEPROM_DATA[SFF8636_CC_BASE_OFFSET], cc1);
+ // check start from 0x00
+
+  if ((EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP) ||
+      (EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP_PLUS) ||
+      (EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP28)){
+
+      if(check_8636CC()){
+        DTLcanvas.drawString("I2C read success !!", 10, locY++ * pitch);
+        DTLcanvas.drawString("QSFP/QSFP+/QSFP28", 10, locY++ * pitch);
+      }else{
+        DTLcanvas.drawString("I2C read fail !!", 10, locY++ * pitch);
+      }
+      cc1 = calc_8636CC1();
+      cc2 = calc_8636CC2();
+      cc_base = EEPROM_DATA[SFF8636_CC_BASE_OFFSET];
+      cc_ext = EEPROM_DATA[SFF8636_CC_EXT_OFFSET];
+
+   } else {
+ // if SFP/SFP+(SFF-8472)
+      if(check_8079CC()){
+        DTLcanvas.drawString("I2C read success !!", 10, locY++ * pitch);
+        DTLcanvas.drawString("GBIC/SFP/SFP+", 10, locY++ * pitch);
+      }else{
+        DTLcanvas.drawString("I2C read fail !!", 10, locY++ * pitch);
+      }
+      cc1 = calc_8079CC1();
+      cc2 = calc_8079CC2();
+      cc_base = EEPROM_DATA[0x3f];
+      cc_ext = EEPROM_DATA[0x5f];
+}
+      sprintf(buf,"CC base=%02x  CALC=%04x",cc_base, cc1);
       DTLcanvas.drawString(String(buf), 10, locY++ * pitch);
-      sprintf(buf,"CC ext =%02x  CALC=%04x",EEPROM_DATA[SFF8636_CC_EXT_OFFSET], cc2);
+      sprintf(buf,"CC ext =%02x  CALC=%04x",cc_ext, cc2);
       DTLcanvas.drawString(String(buf), 10, locY++ * pitch);
 
       DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
       dispHEXdump();
       delay(1000);
 }
+//
+// HEX DIFF dump
+//
+void dispHEXDIFFdump(){
+      int i,j, addr, xf;
+      int     locY=2;
+      String s;
+      char buf[512];
+      File file;
+      byte a,b;
+
+      DTLcanvas.fillCanvas(0);
+      DTLcanvas.setTextColor(15,0);
+      DTLcanvas.drawString(" diff "+ String(fnP[fileP + DIRtop]) , 40 , 10);
+      DTLcanvas.setTextSize(22);
+
+      DTLcanvas.drawString("   0 1  2 3  4 5  6 7  8 9  A B  C D  E F" , 4, locY++ * HEXpitch);
+      // hex dump loop
+  for(i=0 ; i < 16 ; i++){
+    s = String(i,HEX);
+    s.toUpperCase();
+    s.concat(":");
+    DTLcanvas.setTextColor(15,0);
+    DTLcanvas.drawString(s , 4, locY * HEXpitch);
+ 
+    xf=0;
+    for(j = 0; j < 16 ; j++){
+         addr = i*16+j;
+         a = EEPROM_DATA[addr];
+         b = EEPROM_DATA2[addr];
+        if(a == b){
+            DTLcanvas.setTextColor(15,0);
+        }else {
+            DTLcanvas.setTextColor(0,15);
+        }
+        sprintf(buf, "%02x",b);
+
+        DTLcanvas.drawString(String(buf) , 4+ 26 + j *26+ xf*13, locY * HEXpitch);
+        if(j % 2) xf++;
+    }
+    locY++;
+
+  }
+      
+        DTLcanvas.pushCanvas(0,60,UPDATE_MODE_GLR16);  // 450ms long delay
+}
+
 //
 // HEX dump
 //
@@ -214,44 +397,201 @@ void dispHEXdump(){
                 HEXcanvas.drawString(s , 4, locY++ * HEXpitch);
   }
       
+ //     HEXcanvas.pushCanvas(0,520,UPDATE_MODE_DU);   // 250ms delay
+        HEXcanvas.pushCanvas(0,520,UPDATE_MODE_GLR16);  // 450ms long delay
+}
+//
+// ASCII dump
+//
+void dispASCIIdump(){
+      int i,j;
+      byte c;
+      int     locY=0;
+      String s;
+      char buf[4];
+      HEXcanvas.fillCanvas(0);
+      HEXcanvas.setTextSize(22);
+      HEXcanvas.setTextColor(15);
+//      HEXcanvas.drawString("   0 1  2 3  4 5  6 7  8 9  A B  C D  E F" , 4, locY++);
+      // hex dump loop
+  for(i=0 ; i < 8 ; i++){
+    s = String(i*2,HEX);
+    s.toUpperCase();
+    s.concat(":");
+    for(j = 0; j < 32 ; j++){
+ //     s.concat(String(EEPROM_DATA[i*16+j],HEX));
+        c = EEPROM_DATA[i*32+j];
+        if(c > 0x20 && c < 0x7f){
+          sprintf(buf, "%c",c);
+        }else {
+//          sprintf(buf, "%02x",c);
+            sprintf(buf, ".",c);
+        }
+        s.concat(buf);
+//        if(j % 2) s.concat(" ");
+    }
+                HEXcanvas.drawString(s , 4, locY++ * pitch);
+  }
+      
       HEXcanvas.pushCanvas(0,520,UPDATE_MODE_DU);
 }
-//
-// check checksum
-//
-int calc_CC1(){
-  int i,cc1 = 0;
-    for (i=0x80; i < 0xbf ; i++){
-    cc1 = cc1 + EEPROM_DATA[i]; 
+//==========================
+// ASCII display 16x16
+//==========================
+void dispASCII(){
+  int i,j;
+  int locY;
+  String s;
+  byte c;
+  char buf[4];
+      DTLcanvas.fillCanvas(0);
+      DTLcanvas.setTextSize(32);
+//      DTLcanvas.drawString("     >>> ASCII DUMP <<<", 20, locY++ * pitch);
+    for(i=0 ; i < 16 ; i++){
+      s = "";
+      for(j = 0; j < 16 ; j++){
+        c = EEPROM_DATA[i*16+j];
+        if(c > 0x20 && c < 0x7f){
+          sprintf(buf, "%c",c);
+        }else {
+          sprintf(buf, ".",c);
+        }
+        s.concat(buf);
+    }
+        DTLcanvas.drawString(s , 20, locY++ * pitch);
   }
-return cc1;
-}
-int calc_CC2(){
-  int i,cc2 = 0;
-    for (i=0xc0; i < 0xdf ; i++){
-    cc2 = cc2 + EEPROM_DATA[i]; 
-  }
-return cc2;
-}
-// ---------------------------------------------------
-bool check_CC (){
-  int cc1 = 0; // 0xbf
-  int cc2 = 0; // 0xdf
-  cc1 = calc_CC1();
-  cc2 = calc_CC2();
-
-  cc1 = cc1 & 0xff;
-  if(cc1 != EEPROM_DATA[SFF8636_CC_BASE_OFFSET]) return false;
-  cc2 = cc2 & 0xff;
-  if(cc2 != EEPROM_DATA[SFF8636_CC_EXT_OFFSET]) return false;
-  return true;
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
 }
 // =====================================================================
 //
 //    main function , ETHTOOL stype decoder
 //
 // =====================================================================
-int DispETHTOOL(){
+int Disp8079ETHTOOL(){
+  int i,j,cc1,cc2;
+  int locY = 0;
+ String s = "dummy";
+ char buf[512];
+
+  if(!check_8079CC()){
+    cc1 = calc_8079CC1();
+    cc2 = calc_8079CC2();
+      DTLcanvas.fillCanvas(0);
+      DTLcanvas.setTextSize(32);
+      DTLcanvas.drawString("check sum fail !!" , 10, locY++ * pitch);
+      sprintf(buf,"CC base=%02x  CALC=%04x",EEPROM_DATA[0x3f], cc1);
+      DTLcanvas.drawString(String(buf), 10, locY++ * pitch);
+      sprintf(buf,"CC ext =%02x  CALC=%04x",EEPROM_DATA[0x9f], cc2);
+      DTLcanvas.drawString(String(buf), 10, locY++ * pitch);
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
+      dispHEXdump();
+      delay(1000);
+      return false;
+  }
+  DTLcanvas.fillCanvas(0);
+  DTLcanvas.setTextSize(28);
+
+  DTLcanvas.drawString("ID         : " + sff8472_ID_name(0x00), 10, locY++ * pitch);
+
+      s = sff8079_E_transceiver();
+      DTLcanvas.drawString("TRN type   : " + s, 10, locY++ * pitch);
+  if(EEPROM_DATA[0x04] || EEPROM_DATA[0x05]){
+      DTLcanvas.drawString("SONET      : " + sff8472_SONET_transceiver(), 10, locY++ * pitch);
+}
+  if(EEPROM_DATA[0x07]){
+      DTLcanvas.drawString("FC Type: " + sff8472_FC_transceiver(), 10, locY++ * pitch);
+}
+  if(EEPROM_DATA[0x0a]){
+      DTLcanvas.drawString("FC Speed   : " + sff8472_FC_speed(), 10, locY++ * pitch);
+}
+// 8 bit 0 to 3 SFP+ Cable technology
+  if(EEPROM_DATA[0x08] & 0x0f){
+      DTLcanvas.drawString("Cable technology: " + sff8472_cable_tech(), 10, locY++ * pitch);
+}
+//
+// show connector type
+//
+      s = sff8024_connector(0x02);
+      DTLcanvas.drawString("Connector  : " + s, 10, locY++ * pitch);
+
+//  DTLcanvas.drawString("ID         : " + sff8079_rate_identifier(), 10, locY++ * pitch);
+// 12 BR
+if(EEPROM_DATA[0x0c]){
+      if(EEPROM_DATA[0x0c] == 0xff){
+         sprintf(buf,"%6.2fGbps",float(EEPROM_DATA[0xa0])*0.25);
+      }else {
+         sprintf(buf,"%dMbps",EEPROM_DATA[0x0c]*100);
+      }
+  DTLcanvas.drawString("BR,Nominal : " + String(buf), 10, locY++ * pitch);
+}
+if(EEPROM_DATA[0x0e]){
+  sprintf(buf,"%dkm",EEPROM_DATA[0x0e]);
+  DTLcanvas.drawString("Length(SMF): " + String(buf), 10, locY++ * pitch);
+}
+if(EEPROM_DATA[0x0f]){
+  sprintf(buf,"%dm",EEPROM_DATA[0x0f] * 100);
+  DTLcanvas.drawString("Length(SMF): " + String(buf), 10, locY++ * pitch);
+}
+if(EEPROM_DATA[0x10]){
+  sprintf(buf,"%dm",EEPROM_DATA[0x10]*10);
+  DTLcanvas.drawString("Length(OM2): " + String(buf), 10, locY++ * pitch);
+}
+if(EEPROM_DATA[0x11]){
+  sprintf(buf,"%dm",EEPROM_DATA[0x11]);
+  DTLcanvas.drawString("Length(OM1): " + String(buf), 10, locY++ * pitch);
+}
+// 18 OM4 or copper
+if(EEPROM_DATA[0x12]){
+  if(EEPROM_DATA[0x02] == 0x22){
+    // RJ45
+     sprintf(buf,"%dm",EEPROM_DATA[0x12]);
+     DTLcanvas.drawString("Length(UTP): " + String(buf), 10, locY++ * pitch);
+
+  } else {
+    sprintf(buf,"%dm",EEPROM_DATA[0x12]*10);
+     DTLcanvas.drawString("Length(OM4): " + String(buf), 10, locY++ * pitch);
+  }
+}
+if(EEPROM_DATA[0x13]){
+  sprintf(buf,"%dm",EEPROM_DATA[0x13]*10);
+  DTLcanvas.drawString("Length(OM3): " + String(buf), 10, locY++ * pitch);
+}
+//
+      DTLcanvas.drawString("Vendor NAME: " + getSTRn(0x14,16), 10, locY++ * pitch);
+// 36(0x24) extend TRN type ?
+// OUI
+      sprintf(buf,"%02x:%02x:%02x",EEPROM_DATA[0x25],
+                                   EEPROM_DATA[0x25+1],
+                                   EEPROM_DATA[0x25+2]);
+     DTLcanvas.drawString("Vendor OUI : " + String(buf), 10, locY++ * pitch);      
+// 
+     DTLcanvas.drawString("Vendor PN  : " + getSTRn(0x28,16), 10, locY++ * pitch);
+// 
+// REV
+      DTLcanvas.drawString("Vendor REV : " + getSTRn(0x38,4), 10, locY++ * pitch);
+// 60-61 wavelength
+// 62 Unallocated
+// 63 CC base
+// 64-65 options
+// 66 BR MAX
+// 67 BR MIN
+
+      DTLcanvas.drawString("Vendor SN  : " + getSTRn(0x44,16), 10, locY++ * pitch);
+      // create file name for save data, omit space
+      setSN(0x44, 16);
+      
+      DTLcanvas.drawString("Vendor DATE: " + getSTRn(0x54,8), 10, locY++ * pitch);
+ // 92 diag type
+ // 94 rev comp
+
+      DTLcanvas.setTextSize(20);
+      DTLcanvas.drawString("REV Compli : " + sff_revision(0x5e), 10, locY++ * pitch);
+// 95 CC ext
+
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_GLR16);
+}
+
+int Disp8636ETHTOOL(){
   int cc1 = 0;
   int cc2 = 0;
   int i,j;
@@ -259,9 +599,9 @@ int DispETHTOOL(){
  String s = "dummy";
  char buf[512];
 
-  if(!check_CC()){
-    cc1 = calc_CC1();
-    cc2 = calc_CC2();
+  if(!check_8636CC()){
+    cc1 = calc_8636CC1();
+    cc2 = calc_8636CC2();
       DTLcanvas.fillCanvas(0);
       DTLcanvas.setTextSize(32);
       DTLcanvas.drawString("check sum fail !!" , 10, locY++ * pitch);
@@ -316,42 +656,9 @@ if(EEPROM_DATA[SFF8636_CBL_LEN_OFFSET]){
 }
   DTLcanvas.drawString("Technology : " + sff8636_tx_tech(), 10, locY++ * pitch);
 //
-      sprintf(buf,"%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c",EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+1],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+2],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+3],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+4],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+5],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+6],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+7],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+8],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+9],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+10],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+11],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+12],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+13],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+14],
-                                 EEPROM_DATA[SFF8636_VENDOR_NAME_START_OFFSET+15]);
-      DTLcanvas.drawString("Vendor NAME: " + String(buf), 10, locY++ * pitch);
-      
+      DTLcanvas.drawString("Vendor NAME: " + getSTRn(SFF8636_VENDOR_NAME_START_OFFSET,16), 10, locY++ * pitch);   
 // 
-      sprintf(buf,"%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c",EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+1],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+2],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+3],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+4],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+5],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+6],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+7],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+8],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+9],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+10],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+11],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+12],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+13],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+14],
-                                 EEPROM_DATA[SFF8636_VENDOR_PN_START_OFFSET+15]);
-     DTLcanvas.drawString("Vendor PN  : " + String(buf), 10, locY++ * pitch);
+     DTLcanvas.drawString("Vendor PN  : " + getSTRn(SFF8636_VENDOR_PN_START_OFFSET,16), 10, locY++ * pitch);
       
 // 
 // REV
@@ -359,56 +666,29 @@ if(EEPROM_DATA[SFF8636_CBL_LEN_OFFSET]){
                          EEPROM_DATA[SFF8636_VENDOR_REV_START_OFFSET+1]);
       DTLcanvas.drawString("Vendor REV : " + String(buf), 10, locY++ * pitch);
 // 
-      sprintf(buf,"%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c",EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+1],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+2],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+3],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+4],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+5],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+6],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+7],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+8],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+9],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+10],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+11],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+12],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+13],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+14],
-                                 EEPROM_DATA[SFF8636_VENDOR_SN_START_OFFSET+15]);
-      DTLcanvas.drawString("Vendor SN  : " + String(buf), 10, locY++ * pitch);
+      DTLcanvas.drawString("Vendor SN  : " + getSTRn(SFF8636_VENDOR_SN_START_OFFSET,16), 10, locY++ * pitch);
       // create file name for save data, omit space
-      i = 0;
-      SN[i] = '/';
-      while(buf[i] != 0x20){
-        SN[i+1] = buf[i];
-        i++;
-        if(i>16) break;
-      }
-      SN[i+1] = '.';
-      SN[i+2] = 'b';
-      SN[i+3] = 'i';
-      SN[i+4] = 'n';                  
-      SN[i+5] = 0x00;
-//      SN = String(buf);
-//      strncpy(buf, &EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET], 6);
-      sprintf(buf,"%c%c%c%c%c%c%c%c",EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+1],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+2],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+3],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+4],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+5],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+6],
-                                 EEPROM_DATA[SFF8636_DATE_YEAR_OFFSET+7]);
-      DTLcanvas.drawString("Vendor DATE: " + String(buf), 10, locY++ * pitch);
+      setSN(SFF8636_VENDOR_SN_START_OFFSET,16);
+
+      DTLcanvas.drawString("Vendor DATE: " + getSTRn(SFF8636_DATE_YEAR_OFFSET,8), 10, locY++ * pitch);
 // OUI
       sprintf(buf,"%02x:%02x:%02x",EEPROM_DATA[SFF8636_VENDOR_OUI_OFFSET],
                                    EEPROM_DATA[SFF8636_VENDOR_OUI_OFFSET+1],
                                    EEPROM_DATA[SFF8636_VENDOR_OUI_OFFSET+2]);
       DTLcanvas.drawString("Vendor OUI : " + String(buf), 10, locY++ * pitch);
-      DTLcanvas.setTextSize(2);
+      DTLcanvas.setTextSize(20);
       DTLcanvas.drawString("REV Compli : " + sff_revision(SFF8636_REV_COMPLIANCE_OFFSET), 10, locY++ * pitch);
 
-      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
+      DTLcanvas.pushCanvas(0,60,UPDATE_MODE_GLR16);
+}
+int DispETHTOOL(){
+    if ((EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP) ||
+        (EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP_PLUS) ||
+        (EEPROM_DATA[SFF8636_ID_OFFSET] == SFF8024_ID_QSFP28)){
+      Disp8636ETHTOOL();
+    } else {
+      Disp8079ETHTOOL();
+    }
 //
 // HEX dump
 //
@@ -429,11 +709,11 @@ void DispINFO(){
       DTLcanvas.setTextColor(15);
       DTLcanvas.setTextDatum(TC_DATUM);
       DTLcanvas.drawString("SFP/QSFP EEPROM decoder" , 10, locY++ * pitch);
-      DTLcanvas.drawString("   2021/02/04 ver 0.1" , 10, locY++ * pitch);
+      DTLcanvas.drawString("   2021/02/10 ver 1.0" , 10, locY++ * pitch);
       DTLcanvas.drawString("             by JN1OLJ" , 10, locY++ * pitch);
       DTLcanvas.drawString("" , 10, locY++ * pitch);
       DTLcanvas.drawString("refer ethtool 5.10" , 10, locY++ * pitch);
-      DTLcanvas.drawString("      SFF-8472" , 10, locY++ * pitch);
+      DTLcanvas.drawString("      SFF-8472 Rev 12.3" , 10, locY++ * pitch);
       DTLcanvas.drawString("      SFF-8636 Rev 2.1" , 10, locY++ * pitch);
       DTLcanvas.drawString("      SFF-8024 Rev 4.8" , 10, locY++ * pitch);
       locY++;
@@ -450,7 +730,7 @@ void DispINFO(){
       M5.SHT30.UpdateData();
       tem = M5.SHT30.GetTemperature();
       dtostrf(tem, 2, 2 , temStr);
-      DTLcanvas.drawString("Temperatura:" + String(temStr) + "*C", 10, locY++ * pitch);
+      DTLcanvas.drawString("Temperatura:" + String(temStr) + " C", 10, locY++ * pitch);
       tem = M5.SHT30.GetTemperature();
       DTLcanvas.pushCanvas(0,60,UPDATE_MODE_DU);
       delay(500);
@@ -464,21 +744,13 @@ void ButtonTest(char* str)
     canvas.pushCanvas(100,300,UPDATE_MODE_DU);
     delay(500);
 }
-void drawfileP(){
-  filePcanvas.fillCanvas(0);
-  filePcanvas.setTextSize(48);
-  filePcanvas.drawString(">" , 0, (fileP-1)*pitch);
-  filePcanvas.pushCanvas(2,60,UPDATE_MODE_DU);
-}
-void upfileP(){
- fileP++;
- if(fileP >  (DIRmax-1) ) fileP = (DIRmax-1);
- drawfileP();
-}
-void downfileP(){
- fileP--;
- if(fileP < 1 ) fileP = 1;
- drawfileP();
+//
+// sample data load and ntp test
+//
+void menu4(){
+//  dummy_read(EEPROM_DATA);
+//  sync_with_ntp();
+  dispASCII();
 }
 void GoSleep(){
     MENUcanvas.fillCanvas(0);
@@ -491,12 +763,12 @@ void GoSleep(){
 void drawMenu(){
   MENUcanvas.fillCanvas(0);
   MENUcanvas.setTextSize(48);
-  MENUcanvas.drawString("^" , 50+ menuP* 80, 0);
+  MENUcanvas.drawString("^" , 25+ menuP* 70, 0);
   MENUcanvas.pushCanvas(0,940,UPDATE_MODE_DU);
 }
 void upMenu(){
  menuP++;
- if(menuP >  6 ) menuP = 6;
+ if(menuP >  7 ) menuP = 7;
  drawMenu();
 }
 void downMenu(){
@@ -511,14 +783,14 @@ void doMenu()
   if(menuP == 1 ) ReadI2C();
   if(menuP == 2 ) FileWrite(SN);
   if(menuP == 3) DispETHTOOL();  // 
-  if(menuP == 4) dummy_read(EEPROM_DATA);;  // dummy data dislay for debug
-
-  if(menuP == 5 ) DispINFO();
-  if(menuP == 6 ) GoSleep();
+  if(menuP == 4) menu4();  // dummy data dislay for debug
+  if(menuP == 5 ) ShowDir();
+  if(menuP == 6 ) DispINFO();
+  if(menuP == 7 ) GoSleep();
 }
 // ========== basic system function ============================================
 void setup() {
-
+// void M5EPD::begin(bool touchEnable, bool SDEnable, bool SerialEnable, bool BatteryADCEnable, bool I2CEnable)
     M5.begin();
     M5.RTC.begin();
 //    Wire.begin(21,22);     // for I2C master
@@ -558,18 +830,27 @@ void setup() {
     canvas.setTextSize(20);
     canvas.setTextColor(0);                // white color
 //    canvas.setTextDatum(ML_DATUM); // Middle left
-    canvas.drawString(" load   read   save   disp  read   info  PWR" , 10, 900);
-    canvas.drawString(" file   I2C    file  decode dummy        off" , 10, 920);
+    canvas.drawString(" LOAD  READ  SAVE  DISP  DISP  LOAD  INFO  PWR" , 0, 902);
+    canvas.drawString(" file  I2C   file decode ASCII DIFF        off" , 0, 921);
     canvas.drawFastHLine(0, 898, 540, 0);
-    canvas.drawFastVLine(90, 898, 50, 0);
-    canvas.drawFastVLine(170, 898, 50, 0);
-    canvas.drawFastVLine(250, 898, 50, 0);
-    canvas.drawFastVLine(330, 898, 50, 0);
-    canvas.drawFastVLine(410, 898, 50, 0);
-    canvas.drawFastVLine(490, 898, 50, 0);
-    canvas.pushCanvas(0,0,UPDATE_MODE_DU4);
+    canvas.drawFastVLine(70, 898, 50, 0);
+    canvas.drawFastVLine(70+1, 898, 50, 0);
+    canvas.drawFastVLine(70*2, 898, 50, 0);
+    canvas.drawFastVLine(70*2+1, 898, 50, 0);
+    canvas.drawFastVLine(70*3, 898, 50, 0);
+    canvas.drawFastVLine(70*3+1, 898, 50, 0);
+    canvas.drawFastVLine(70*4, 898, 50, 0);
+    canvas.drawFastVLine(70*4+1, 898, 50, 0);
+    canvas.drawFastVLine(70*5, 898, 50, 0);
+    canvas.drawFastVLine(70*5+1, 898, 50, 0);
+    canvas.drawFastVLine(70*6, 898, 50, 0);
+    canvas.drawFastVLine(70*6+1, 898, 50, 0);
+    canvas.drawFastVLine(70*7, 898, 50, 0);
+    canvas.drawFastVLine(70*7+1, 898, 50, 0);
+    canvas.pushCanvas(0,0,UPDATE_MODE_GLR16);
     
     drawMenu();
+
 }
 ////////////////////////////////////////////////////////////
 /// main loop pickup user operations
@@ -577,7 +858,7 @@ void setup() {
 void loop() {
   if(fileP){
     if( M5.BtnL.wasPressed()) downfileP();
-    if( M5.BtnP.wasPressed()) FileRead(fnP[fileP]);
+    if( M5.BtnP.wasPressed()) if (menuP == 5) {FileRead2(fnP[fileP + DIRtop]);}else{FileRead(fnP[fileP + DIRtop]);}
     if( M5.BtnR.wasPressed()) upfileP();
 
   }else{
