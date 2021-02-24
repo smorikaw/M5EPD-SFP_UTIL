@@ -515,12 +515,12 @@ int Disp8079ETHTOOL(){
       DTLcanvas.drawString("Connector  : " + s, 10, locY++ * pitch);
 
 //  DTLcanvas.drawString("ID         : " + sff8079_rate_identifier(), 10, locY++ * pitch);
-// 12 BR
+// 12 BR extention is 66 250MB base
 if(EEPROM_DATA[0x0c]){
       if(EEPROM_DATA[0x0c] == 0xff){
-         sprintf(buf,"%6.2fGbps",float(EEPROM_DATA[0xa0])*0.25);
+         sprintf(buf,"%6.2fGbps",float(EEPROM_DATA[0x42])*0.25);
       }else {
-         sprintf(buf,"%dMbps",EEPROM_DATA[0x0c]*100);
+         sprintf(buf,"%dMbps",EEPROM_DATA[0x42]*100);
       }
   DTLcanvas.drawString("BR,Nominal : " + String(buf), 10, locY++ * pitch);
 }
@@ -709,7 +709,7 @@ void DispINFO(){
       DTLcanvas.setTextColor(15);
       DTLcanvas.setTextDatum(TC_DATUM);
       DTLcanvas.drawString("SFP/QSFP EEPROM decoder" , 10, locY++ * pitch);
-      DTLcanvas.drawString("   2021/02/10 ver 1.0" , 10, locY++ * pitch);
+      DTLcanvas.drawString("   2021/02/24 ver 1.1" , 10, locY++ * pitch);
       DTLcanvas.drawString("             by JN1OLJ" , 10, locY++ * pitch);
       DTLcanvas.drawString("" , 10, locY++ * pitch);
       DTLcanvas.drawString("refer ethtool 5.10" , 10, locY++ * pitch);
@@ -748,7 +748,7 @@ void ButtonTest(char* str)
 // sample data load and ntp test
 //
 void menu4(){
-//  dummy_read(EEPROM_DATA);
+
 //  sync_with_ntp();
   dispASCII();
 }
@@ -783,7 +783,7 @@ void doMenu()
   if(menuP == 1 ) ReadI2C();
   if(menuP == 2 ) FileWrite(SN);
   if(menuP == 3) DispETHTOOL();  // 
-  if(menuP == 4) menu4();  // dummy data dislay for debug
+  if(menuP == 4) menu4();  // ASCII data dislay for debug
   if(menuP == 5 ) ShowDir();
   if(menuP == 6 ) DispINFO();
   if(menuP == 7 ) GoSleep();
