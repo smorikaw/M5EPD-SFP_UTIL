@@ -6,8 +6,18 @@
 //
 // PORT A I2C/ PORT B DAC/ADC / PORT C UART
 //
+// SFF-8024 table 3-1
+// SFP+/SFP28 and later : SFF-8472
+// QSFP+                : SFF-8436
+// QSFP+/QSFP28 and later : SFF-8636
+// QSFP-DD              : CMIS
+// OSFP                 : CMIS
+// MicroQSFP            : SFF-8436
+//
 #include <M5EPD.h>
-#include <Wire.h>
+//#include <Wire.h>
+//#include <SdFat.h> M5EPD.h -> SD.h -> FS.h -> Arduino.h
+//#include "SdFat.h"
 #include "qsfp.h"
 #include "sff-common.h"
 #include "binaryttf.h"
@@ -88,6 +98,8 @@ void ShowDirPageUp(){
     DIRtop += 15;
     fileP = 1;
     ShowDirList();
+  }else {
+    fileP = 15;  // no next page
   }
 }
 void ShowDirPageDown(){
@@ -208,7 +220,18 @@ int FileRead2(char *fn){
   fileP = 0;   // back main menu
   return 0;
 }
+// for file create date sync to RTC
+void dateTime(uint16_t* date, uint16_t* time) {
+ // DateTime now = rtc.now();
+    M5.RTC.getTime(&RTCtime);
+    M5.RTC.getDate(&RTCDate);
+  // return date using FAT_DATE macro to format fields
+//  *date = FAT_DATE(RTCDate.year, RTCDate.mon, RTCDate.day);
 
+  // return time using FAT_TIME macro to format fields
+//  *time = FAT_TIME(RTCtime.hour, RTCtime.min, RTCtime.sec);
+}
+// save bin data
 int FileWrite(char *fn){
   
   int locY = 0;
@@ -221,6 +244,7 @@ int FileWrite(char *fn){
   if(SD.exists(fn)){
     DTLcanvas.drawString(String(fn) + " exists!", 10, locY++ * pitch);
   }
+//  SdFile::dateTimeCallback(dateTime);  // for timestamp
   file =SD.open(fn, FILE_WRITE);  // over write mode
   DTLcanvas.drawString("try write " + String(fn), 10, locY++ * pitch);
   file.write(EEPROM_DATA, dataSize);
@@ -493,8 +517,8 @@ int Disp8079ETHTOOL(){
 
   DTLcanvas.drawString("ID         : " + sff8472_ID_name(0x00), 10, locY++ * pitch);
 
-      s = sff8079_E_transceiver();
-      DTLcanvas.drawString("TRN type   : " + s, 10, locY++ * pitch);
+  s = sff8079_E_transceiver();
+  DTLcanvas.drawString("TRN type   : " + s, 10, locY++ * pitch);
   if(EEPROM_DATA[0x04] || EEPROM_DATA[0x05]){
       DTLcanvas.drawString("SONET      : " + sff8472_SONET_transceiver(), 10, locY++ * pitch);
 }
@@ -520,7 +544,7 @@ if(EEPROM_DATA[0x0c]){
       if(EEPROM_DATA[0x0c] == 0xff){
          sprintf(buf,"%6.2fGbps",float(EEPROM_DATA[0x42])*0.25);
       }else {
-         sprintf(buf,"%dMbps",EEPROM_DATA[0x42]*100);
+         sprintf(buf,"%dMbps",EEPROM_DATA[0x0c]*100);
       }
   DTLcanvas.drawString("BR,Nominal : " + String(buf), 10, locY++ * pitch);
 }
@@ -528,7 +552,7 @@ if(EEPROM_DATA[0x0e]){
   sprintf(buf,"%dkm",EEPROM_DATA[0x0e]);
   DTLcanvas.drawString("Length(SMF): " + String(buf), 10, locY++ * pitch);
 }
-if(EEPROM_DATA[0x0f]){
+if(EEPROM_DATA[0x0f] && (EEPROM_DATA[0x0f] != 0xff)){
   sprintf(buf,"%dm",EEPROM_DATA[0x0f] * 100);
   DTLcanvas.drawString("Length(SMF): " + String(buf), 10, locY++ * pitch);
 }
@@ -585,7 +609,7 @@ if(EEPROM_DATA[0x13]){
  // 94 rev comp
 
       DTLcanvas.setTextSize(20);
-      DTLcanvas.drawString("REV Compli : " + sff_revision(0x5e), 10, locY++ * pitch);
+      DTLcanvas.drawString("REV Compli : " + sff8472_revision(0x5e), 10, locY++ * pitch);
 // 95 CC ext
 
       DTLcanvas.pushCanvas(0,60,UPDATE_MODE_GLR16);
@@ -709,7 +733,7 @@ void DispINFO(){
       DTLcanvas.setTextColor(15);
       DTLcanvas.setTextDatum(TC_DATUM);
       DTLcanvas.drawString("SFP/QSFP EEPROM decoder" , 10, locY++ * pitch);
-      DTLcanvas.drawString("   2021/02/24 ver 1.1" , 10, locY++ * pitch);
+      DTLcanvas.drawString("   2021/02/27 ver 1.2" , 10, locY++ * pitch);
       DTLcanvas.drawString("             by JN1OLJ" , 10, locY++ * pitch);
       DTLcanvas.drawString("" , 10, locY++ * pitch);
       DTLcanvas.drawString("refer ethtool 5.10" , 10, locY++ * pitch);
@@ -852,6 +876,7 @@ void setup() {
     drawMenu();
 
 }
+
 ////////////////////////////////////////////////////////////
 /// main loop pickup user operations
 ///////////////////////////////////////////////////////////
